@@ -201,7 +201,8 @@ async function levels() {
   await run(8, 'play fret 1 on each string (mic)');
   await run(10, 'boss: half tapped, half played', { shot: true });
   await run(11, 'name the note on low E (pad)', { shot: true });
-  await run(12, 'play it on low E, with wrong notes mixed in (mic)', { bot: { wrongEvery: 6 } });
+  await run(12, 'play it on low E, 2 wrong notes of 20 still pass at 90% (mic)', { bot: { wrongEvery: 10 } });
+  await run(12, '3 wrong notes of 20 fail (85%)', { bot: { wrongEvery: 6 }, expectFail: true });
   await run(20, 'boss: E and A, played under 5 s');
   await run(28, 'one note on all 6 strings in under 20 s (mic)');
   await run(30, 'boss: whole neck played');
