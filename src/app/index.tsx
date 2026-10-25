@@ -135,7 +135,7 @@ const s = StyleSheet.create({
     borderWidth: 3,
     borderColor: C.accent2,
   },
-  boss: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#b5452f', borderColor: C.star },
-  nodeText: { color: '#1d140a', fontWeight: '900', fontSize: 17 },
+  boss: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#8B4FD6', borderColor: C.star },
+  nodeText: { color: C.onAccent, fontWeight: '900', fontSize: 17 },
   nodeLabel: { color: C.dim, fontSize: 10, textAlign: 'center', marginTop: 2 },
 });

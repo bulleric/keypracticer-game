@@ -253,35 +253,62 @@ async function levels() {
   await browser.close();
 }
 
-// ---- Live Practice: the bot plays the F major pentatonic video exercise ----
-async function practice() {
-  const { browser, page } = await newPage();
-  await page.goto(`${BASE}/practice`);
-  await page.waitForSelector('[data-testid="practice-code"]');
-  await page.screenshot({ path: path.join(OUT, 'practice-picker.png'), fullPage: true });
-  await page.fill('[data-testid="practice-code"]', 'FPS2UD80');
-  await page.evaluate(() => Object.assign(window.__bot, { on: true, count: 0, wrongEvery: 6, wrongStep: 1, beatLead: 0, delay: 0.45 }));
-  await page.click('[data-testid="practice-code-go"]');
-  await page.waitForSelector('[data-testid="reel"]');
+// ---- Live Practice: Pentatonic Path, played by the bot -------------------
+async function waitDone(page, ms) {
   const t0 = Date.now();
-  let shot = false;
-  while (Date.now() - t0 < 90000) {
-    if (await page.locator('[data-testid="practice-done"]').count()) break;
-    const p = await page.evaluate(() => window.__NT__?.practice);
-    if (!shot && p && p.index >= 5) {
-      shot = true;
-      await page.screenshot({ path: path.join(OUT, 'practice-live.png') });
-    }
+  while (Date.now() - t0 < ms) {
+    if (await page.locator('[data-testid="practice-done"]').count()) return true;
     await page.waitForTimeout(200);
   }
+  return false;
+}
+
+async function practice() {
+  const { browser, page } = await newPage();
+  // Opens straight into level 1, armed: no setup screen.
+  await page.goto(`${BASE}/practice`);
+  await page.waitForSelector('[data-testid="reel"]');
+  await page.evaluate(() => Object.assign(window.__bot, { on: true, count: 0, wrongEvery: 6, wrongStep: 1, beatLead: 0, delay: 0.45 }));
+  await page.waitForTimeout(2500);
+  await page.screenshot({ path: path.join(OUT, 'practice-detect.png') });
+  const okDetect = await waitDone(page, 60000);
   const p = await page.evaluate(() => window.__NT__?.practice);
-  await page.screenshot({ path: path.join(OUT, 'practice-done.png') });
-  const done = await page.locator('[data-testid="practice-done"]').count();
-  check('Live Practice: F major pentatonic box 2 finishes by playing every note', done > 0 && p?.hits === 23, JSON.stringify(p));
-  // A semitone off is never the previous note in this box, so all 3 wrong plucks (notes 6, 12, 18) count.
-  check('Live Practice: wrong notes are counted and do not move on', p?.misses === 3, `misses ${p?.misses}`);
-  const score = Number(await page.locator('[data-testid="practice-score"]').innerText().catch(() => '0'));
-  check('Live Practice: score shown at the end', score > 2300, String(score));
+  await page.screenshot({ path: path.join(OUT, 'practice-detect-done.png') });
+  check('Live Practice opens on level 1 and the bot finishes it in Detect mode', okDetect && p?.hits === 13, JSON.stringify(p));
+  check('Detect mode: wrong notes are counted and do not move on', p?.misses === 2, `misses ${p?.misses}`);
+  const badge = await page.locator('[data-testid="badge-new"]').count();
+  check('First run earns a badge', badge >= 1, `${badge} new badges`);
+  const next = await page.locator('[data-testid="next-level"]').count();
+  check('Level 2 unlocks', next === 1);
+
+  // Metronome mode on the same exercise: the bot plays on the beat.
+  await page.click('[data-testid="practice-again"]');
+  await page.evaluate(() => Object.assign(window.__bot, { count: 0, wrongEvery: 0, beatLead: 0 }));
+  await page.click('[data-testid="mode-metronome"]');
+  await page.waitForTimeout(300);
+  await page.click('[data-testid="metro-start"]');
+  await page.waitForTimeout(6500);
+  await page.screenshot({ path: path.join(OUT, 'practice-metronome.png') });
+  const okMetro = await waitDone(page, 40000);
+  const m = await page.evaluate(() => window.__NT__?.practice);
+  await page.screenshot({ path: path.join(OUT, 'practice-metronome-done.png') });
+  const g = m?.grades ?? {};
+  const good = (g.perfect ?? 0) + (g.great ?? 0) + (g.good ?? 0);
+  check('Metronome mode: notes on the beat are graded', okMetro && good >= 11, JSON.stringify(g));
+
+  // Panels
+  await page.click('[data-testid="practice-again"]');
+  await page.click('[data-testid="tab-theory"]');
+  await page.waitForSelector('[data-testid="theory-panel"]');
+  await page.screenshot({ path: path.join(OUT, 'practice-theory.png') });
+  await page.click('[data-testid="sheet-close"]');
+  await page.click('[data-testid="tab-levels"]');
+  await page.waitForSelector('[data-testid="plevel-2"]');
+  await page.screenshot({ path: path.join(OUT, 'practice-levels.png') });
+  await page.click('[data-testid="plevel-2"]');
+  await page.waitForTimeout(300);
+  const title = await page.locator('text=Up and back down').count();
+  check('Levels panel loads level 2', title >= 1);
   await browser.close();
 }
 

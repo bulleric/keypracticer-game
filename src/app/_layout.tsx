@@ -6,7 +6,7 @@ import { C } from '../theme/colors';
 export default function RootLayout() {
   return (
     <ProgressProvider>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: C.bg },

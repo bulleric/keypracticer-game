@@ -92,7 +92,7 @@ export function Fretboard({
             ),
           )}
           {/* nut and frets */}
-          <Rect x={boardX - 4} y={top - 8} width={5} height={bottom - top + 16} fill="#efe6d6" />
+          <Rect x={boardX - 4} y={top - 8} width={5} height={bottom - top + 16} fill="#C9C9C2" />
           {fretX.slice(1).map((x, i) => (
             <Line key={i} x1={x} x2={x} y1={top - 8} y2={bottom + 8} stroke={C.fret} strokeWidth={2} />
           ))}
@@ -146,7 +146,7 @@ export function Fretboard({
             <G key={`m${i}`}>
               <Circle cx={fretCenter(m.fret)} cy={stringY(m.string)} r={Math.min(12, spacing * 0.42)} fill={toneColor(m.tone)} stroke="#fff" strokeWidth={1.5} />
               {m.label ? (
-                <SvgText x={fretCenter(m.fret)} y={stringY(m.string) + 4} fontSize={11} fontWeight="bold" fill="#14110f" textAnchor="middle">
+                <SvgText x={fretCenter(m.fret)} y={stringY(m.string) + 4} fontSize={11} fontWeight="bold" fill="#FFFFFF" textAnchor="middle">
                   {m.label}
                 </SvgText>
               ) : null}

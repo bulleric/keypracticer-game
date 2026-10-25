@@ -19,26 +19,34 @@ XP and player titles, boss levels with 3 hearts and a clock that speeds up,
 hints after two misses (cap the level at 2 stars), Note Rush (60-second time
 attack), haptics, shake/pop animations and confetti.
 
-## Live Practice
+## Live Practice: Pentatonic Path
 
-A second path next to the world map (`/practice`). Pick a Keypracticer
-exercise (scale or arpeggio, key, box, pattern) or type the code from a video,
-like `FPS2UD80`. The screen uses the Keypracticer reel layout: title,
-fretboard with the whole box, note names, staff, tab and the red playhead.
-There is no metronome. The glowing note waits until the mic hears it, then the
-strips slide to the next note.
+A game next to the world map (`/practice`). It opens straight into your current
+level, ready to play, in the Keypracticer reel layout: title, fretboard with
+the whole box, note names, staff, tab and the red playhead.
 
-Score: 100 points per right note times the combo multiplier (x2 after 8 in a
-row, x3 after 16, x4 after 32), plus up to 50 for playing within 0.5 s of the
-previous note. A wrong note resets the combo but never ends the run; the note
-still ringing from before never counts as wrong. Stars: 1 for finishing, 2 at
-90% accuracy, 3 at 95% with no pause over 2 s.
+- **20 levels in 4 worlds** (Box 1, Boxes 2 and 3, Boxes 4 and 5, Major and new
+  keys), each with a boss. 1 to 3 stars; a star opens the next level.
+- **Two modes, switchable any time.** Detect: the note waits until the mic
+  hears it. Metronome: 4 clicks count in, the notes run on the beat and every
+  note is graded PERFECT (within 50 ms), GREAT (100 ms), GOOD, WRONG NOTE or MISS.
+- **Practice tools** in Detect: back, hear the note, skip, listen to the phrase,
+  restart. The app ignores the mic while it plays its own notes.
+- **Settings in the session:** mode, key, minor or major, box, pattern, tempo,
+  quarters or eighths. Changing them on a level switches to free play.
+- **Game layer:** combo multiplier (x2/x3/x4 after 8/16/32), speed bonus,
+  pop-ups, shake and pop, XP and player level, daily streak, 12 badges,
+  confetti on 3 stars. Stars: 70% accuracy passes, 90% (Detect) or 85%
+  (Metronome) for 2 stars, 95% for 3.
+- **Theory panel:** what a pentatonic is, the notes and intervals of the
+  current scale in their colours, where the roots are in the box, relative
+  major and minor, the five boxes, practice tips, and "hear the box".
+- `/practice/FPS2UD80` opens a Keypracticer video code in free play.
 
+The app uses the Keypracticer light theme everywhere (`src/theme/colors.ts`).
 The exercises come from a TypeScript port of Keypracticer's `theory.py`
 (`src/practice/theory.ts`). A test checks it against a fixture made by the
 Python code (`scripts/keypracticer-fixture.py`), so the notes match the videos.
-Video codes are not always unique (Blues, Major and Mixolydian share one), so
-the app adds the scale name to its own links.
 
 ## How the mic works
 
@@ -90,14 +98,15 @@ The e2e run first feeds a WAV of the six open strings into Chromium's fake
 microphone and checks the tuner, then replaces the mic with a synthetic guitar
 (`e2e/fake-guitar.js`) that plays whatever the app asks for, and plays levels
 1-4, 8, 10-12, 20, 28, 30-32, 34, 36-40, a tap-mode level, Note Rush and a
-Live Practice run (`npm run e2e practice` runs only that one).
+Live Practice run in both modes (`npm run e2e practice` runs only that one).
 Screenshots land in `e2e/out/`.
 
 ## Layout
 
 ```
 src/app/            screens (expo-router): map, level/[id], tuner, rush, settings, practice/ (Live Practice)
-src/practice/       Live Practice: theory.ts (Keypracticer port), session.ts (rules, score), ReelView (reel layout)
+src/practice/       Live Practice: theory.ts (Keypracticer port), session.ts (detect + metronome rules),
+                    game.ts (levels, badges, streak), PracticeGame, ReelView, TheoryPanel
 src/components/     Fretboard (SVG), AnswerPad, QuizPlayer, RhythmPlayer, Tuner, UI bits
 src/pitch/          tracker (pitchy), mic.ts (web), mic.native.ts (phones), MicService
 src/audio/          shared AudioContext, metronome, speech (expo-speech), haptics
