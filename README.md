@@ -19,6 +19,27 @@ XP and player titles, boss levels with 3 hearts and a clock that speeds up,
 hints after two misses (cap the level at 2 stars), Note Rush (60-second time
 attack), haptics, shake/pop animations and confetti.
 
+## Live Practice
+
+A second path next to the world map (`/practice`). Pick a Keypracticer
+exercise (scale or arpeggio, key, box, pattern) or type the code from a video,
+like `FPS2UD80`. The screen uses the Keypracticer reel layout: title,
+fretboard with the whole box, note names, staff, tab and the red playhead.
+There is no metronome. The glowing note waits until the mic hears it, then the
+strips slide to the next note.
+
+Score: 100 points per right note times the combo multiplier (x2 after 8 in a
+row, x3 after 16, x4 after 32), plus up to 50 for playing within 0.5 s of the
+previous note. A wrong note resets the combo but never ends the run; the note
+still ringing from before never counts as wrong. Stars: 1 for finishing, 2 at
+90% accuracy, 3 at 95% with no pause over 2 s.
+
+The exercises come from a TypeScript port of Keypracticer's `theory.py`
+(`src/practice/theory.ts`). A test checks it against a fixture made by the
+Python code (`scripts/keypracticer-fixture.py`), so the notes match the videos.
+Video codes are not always unique (Blues, Major and Mixolydian share one), so
+the app adds the scale name to its own links.
+
 ## How the mic works
 
 `src/pitch/tracker.ts` takes mic samples in chunks, runs
@@ -68,13 +89,15 @@ npm run build:web && npm run e2e   # headless Chromium, needs a global `playwrig
 The e2e run first feeds a WAV of the six open strings into Chromium's fake
 microphone and checks the tuner, then replaces the mic with a synthetic guitar
 (`e2e/fake-guitar.js`) that plays whatever the app asks for, and plays levels
-1-4, 8, 10-12, 20, 28, 30-32, 34, 36-40, a tap-mode level and Note Rush.
+1-4, 8, 10-12, 20, 28, 30-32, 34, 36-40, a tap-mode level, Note Rush and a
+Live Practice run (`npm run e2e practice` runs only that one).
 Screenshots land in `e2e/out/`.
 
 ## Layout
 
 ```
-src/app/            screens (expo-router): map, level/[id], tuner, rush, settings
+src/app/            screens (expo-router): map, level/[id], tuner, rush, settings, practice/ (Live Practice)
+src/practice/       Live Practice: theory.ts (Keypracticer port), session.ts (rules, score), ReelView (reel layout)
 src/components/     Fretboard (SVG), AnswerPad, QuizPlayer, RhythmPlayer, Tuner, UI bits
 src/pitch/          tracker (pitchy), mic.ts (web), mic.native.ts (phones), MicService
 src/audio/          shared AudioContext, metronome, speech (expo-speech), haptics

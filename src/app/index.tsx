@@ -37,6 +37,7 @@ export default function MapScreen() {
       </View>
 
       <View style={s.quick}>
+        <Button small title="🎸 Live Practice" onPress={() => router.push('/practice')} testID="go-practice" />
         <Button small kind="secondary" title="🎵 Tuner" onPress={() => router.push('/tuner')} testID="go-tuner" />
         <Button small kind="secondary" title="⚡ Note Rush" onPress={() => router.push('/rush')} testID="go-rush" />
         <Button small kind="secondary" title="⚙ Settings" onPress={() => router.push('/settings')} testID="go-settings" />

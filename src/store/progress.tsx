@@ -33,6 +33,8 @@ export interface Progress {
   levels: Record<number, LevelProgress>;
   xp: number;
   rushBest: { tap: number; play: number };
+  /** Live Practice best results by practice code. */
+  practiceBest: Record<string, { score: number; stars: number }>;
   settings: Settings;
 }
 
@@ -46,7 +48,7 @@ export const DEFAULT_SETTINGS: Settings = {
   unlockAll: false,
 };
 
-const EMPTY: Progress = { levels: {}, xp: 0, rushBest: { tap: 0, play: 0 }, settings: DEFAULT_SETTINGS };
+const EMPTY: Progress = { levels: {}, xp: 0, rushBest: { tap: 0, play: 0 }, practiceBest: {}, settings: DEFAULT_SETTINGS };
 const KEY = 'notetrainer.progress.v1';
 
 export function worldStars(p: Progress, world: number): number {
@@ -73,6 +75,8 @@ interface Ctx {
   loaded: boolean;
   recordRound(levelId: number, s: RoundSummary): { newBest: boolean; unlockedNext: boolean };
   recordRush(mode: 'tap' | 'play', score: number, xp: number): boolean;
+  /** Saves a Live Practice result; returns true for a new best score. */
+  recordPractice(code: string, score: number, stars: number, xp: number): boolean;
   updateSettings(s: Partial<Settings>): void;
   reset(): void;
 }
@@ -131,6 +135,16 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         const best = score > p.rushBest[mode];
         save({ ...p, xp: p.xp + xp, rushBest: { ...p.rushBest, [mode]: Math.max(score, p.rushBest[mode]) } });
         return best;
+      },
+      recordPractice(code, score, stars, xp) {
+        const p = ref.current;
+        const prev = p.practiceBest[code] ?? { score: 0, stars: 0 };
+        save({
+          ...p,
+          xp: p.xp + xp,
+          practiceBest: { ...p.practiceBest, [code]: { score: Math.max(prev.score, score), stars: Math.max(prev.stars, stars) } },
+        });
+        return score > prev.score;
       },
       updateSettings(s) {
         const p = ref.current;

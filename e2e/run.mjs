@@ -253,9 +253,41 @@ async function levels() {
   await browser.close();
 }
 
+// ---- Live Practice: the bot plays the F major pentatonic video exercise ----
+async function practice() {
+  const { browser, page } = await newPage();
+  await page.goto(`${BASE}/practice`);
+  await page.waitForSelector('[data-testid="practice-code"]');
+  await page.screenshot({ path: path.join(OUT, 'practice-picker.png'), fullPage: true });
+  await page.fill('[data-testid="practice-code"]', 'FPS2UD80');
+  await page.evaluate(() => Object.assign(window.__bot, { on: true, count: 0, wrongEvery: 6, beatLead: 0, delay: 0.45 }));
+  await page.click('[data-testid="practice-code-go"]');
+  await page.waitForSelector('[data-testid="reel"]');
+  const t0 = Date.now();
+  let shot = false;
+  while (Date.now() - t0 < 90000) {
+    if (await page.locator('[data-testid="practice-done"]').count()) break;
+    const p = await page.evaluate(() => window.__NT__?.practice);
+    if (!shot && p && p.index >= 5) {
+      shot = true;
+      await page.screenshot({ path: path.join(OUT, 'practice-live.png') });
+    }
+    await page.waitForTimeout(200);
+  }
+  const p = await page.evaluate(() => window.__NT__?.practice);
+  await page.screenshot({ path: path.join(OUT, 'practice-done.png') });
+  const done = await page.locator('[data-testid="practice-done"]').count();
+  check('Live Practice: F major pentatonic box 2 finishes by playing every note', done > 0 && p?.hits === 23, JSON.stringify(p));
+  check('Live Practice: wrong notes are counted and do not move on', p?.misses >= 2 && p?.misses <= 5, `misses ${p?.misses}`);
+  const score = Number(await page.locator('[data-testid="practice-score"]').innerText().catch(() => '0'));
+  check('Live Practice: score shown at the end', score > 2300, String(score));
+  await browser.close();
+}
+
 try {
   if (!only) await tunerWithWav();
-  await levels();
+  if (!only || only === 'practice') await practice();
+  if (only !== 'practice') await levels();
 } catch (e) {
   console.error(e);
   results.push({ name: 'runner crashed', ok: false, detail: String(e) });
