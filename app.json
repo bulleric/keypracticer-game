@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "NoteTrainer",
+    "slug": "notetrainer",
+    "scheme": "notetrainer",
+    "version": "0.1.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#14110f",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "de.sidibe.notetrainer",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "NoteTrainer listens to your guitar to check the notes you play."
+      }
+    },
+    "android": {
+      "package": "de.sidibe.notetrainer",
+      "adaptiveIcon": {
+        "backgroundColor": "#14110f",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": ["android.permission.RECORD_AUDIO"],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "react-native-audio-api",
+        {
+          "iosMicrophonePermission": "NoteTrainer listens to your guitar to check the notes you play.",
+          "iosBackgroundMode": false,
+          "androidPermissions": ["android.permission.RECORD_AUDIO", "android.permission.MODIFY_AUDIO_SETTINGS"],
+          "androidForegroundService": false
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
