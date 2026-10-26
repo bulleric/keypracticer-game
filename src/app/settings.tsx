@@ -1,4 +1,7 @@
+import { router } from 'expo-router';
 import { Alert, Platform, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { useAuth } from '../account/auth';
+import { MicService } from '../pitch/MicService';
 import { Screen } from '../components/Screen';
 import { Button, Card, styles as ui } from '../components/ui';
 import { useProgress, type Settings } from '../store/progress';
@@ -45,8 +48,10 @@ function Choice<T extends string | number>({ value, options, onChange }: { value
 }
 
 export default function SettingsScreen() {
-  const { progress, updateSettings, reset } = useProgress();
+  const { progress, updateSettings, updateOnboarding, reset } = useProgress();
+  const auth = useAuth();
   const st = progress.settings;
+  const micOff = progress.onboarding.mic === 'denied';
   const confirmReset = () => {
     if (Platform.OS === 'web') {
       if ((globalThis as any).confirm?.('Reset all stars, badges and XP?')) reset();
@@ -85,6 +90,43 @@ export default function SettingsScreen() {
               { v: 50, label: '+50' },
               { v: 100, label: '+100' },
             ]}
+          />
+        </Row>
+      </Card>
+      <Card style={{ gap: 4 }}>
+        <Text style={ui.h2}>Sound control</Text>
+        <Row label="Guitar as a remote" sub="Between runs, open strings work as buttons: E Enter, A Again, D Demo, G Guide, B Back.">
+          <Toggle k="soundControl" settings={st} update={updateSettings} />
+        </Row>
+        {micOff ? (
+          <Row label="The mic is off" sub="You said no to the mic. Turn it on to play lessons and use sound control.">
+            <Button
+              small
+              title="Turn on"
+              onPress={() => {
+                updateOnboarding({ mic: 'granted' });
+                MicService.start();
+              }}
+              testID="settings-mic-on"
+            />
+          </Row>
+        ) : null}
+      </Card>
+      <Card style={{ gap: 4 }}>
+        <Text style={ui.h2}>Account</Text>
+        <Row label={auth.session ? auth.email ?? 'Signed in' : 'Playing as a guest'} sub={auth.session ? 'Your progress is saved to your account.' : 'Sign in to keep your progress on every device.'}>
+          <Button small kind="secondary" title={auth.session ? 'Manage' : 'Sign in'} onPress={() => router.push('/account')} testID="settings-account" />
+        </Row>
+        <Row label="Intro" sub="Go through the welcome screens again: level, daily goal, mic and tuning.">
+          <Button
+            small
+            kind="secondary"
+            title="Replay"
+            onPress={() => {
+              updateOnboarding({ done: false, step: 1 });
+              router.replace('/welcome');
+            }}
+            testID="settings-replay-intro"
           />
         </Row>
       </Card>

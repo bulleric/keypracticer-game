@@ -13,7 +13,8 @@
       "bundleIdentifier": "de.sidibe.keypracticergame",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Keypracticer Game listens to your guitar to check the notes you play."
-      }
+      },
+      "usesAppleSignIn": true
     },
     "android": {
       "package": "de.sidibe.keypracticergame",
@@ -23,7 +24,9 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "permissions": ["android.permission.RECORD_AUDIO"],
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -37,10 +40,15 @@
         {
           "iosMicrophonePermission": "Keypracticer Game listens to your guitar to check the notes you play.",
           "iosBackgroundMode": false,
-          "androidPermissions": ["android.permission.RECORD_AUDIO", "android.permission.MODIFY_AUDIO_SETTINGS"],
+          "androidPermissions": [
+            "android.permission.RECORD_AUDIO",
+            "android.permission.MODIFY_AUDIO_SETTINGS"
+          ],
           "androidForegroundService": false
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-apple-authentication"
     ],
     "experiments": {
       "typedRoutes": false

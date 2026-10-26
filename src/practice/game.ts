@@ -99,12 +99,14 @@ export interface PentaProfile {
   boxes: number[];
   /** Last level played. */
   current: number;
+  /** Levels up to and including this one are open without stars (set in onboarding: "I know box 1"). */
+  unlockedTo?: number;
 }
 
 export const EMPTY_PROFILE: PentaProfile = { levels: {}, badges: [], streak: { count: 0, last: null }, runs: 0, boxes: [], current: 1 };
 
 export function isLevelOpen(p: PentaProfile, id: number): boolean {
-  return id === 1 || (p.levels[id - 1]?.stars ?? 0) >= 1;
+  return id === 1 || id <= (p.unlockedTo ?? 0) || (p.levels[id - 1]?.stars ?? 0) >= 1;
 }
 
 /** The level to open on: the last one played, or the first one not yet passed. */
