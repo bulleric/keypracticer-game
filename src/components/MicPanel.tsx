@@ -24,7 +24,7 @@ export function MicPanel({ onUseTaps }: { onUseTaps?: () => void }) {
       st.errorCode === 'denied'
         ? Platform.OS === 'web'
           ? 'Allow the microphone in your browser (the icon left of the address bar), then try again.'
-          : 'Allow the microphone for NoteTrainer in your phone settings, then try again.'
+          : 'Allow the microphone for Keypracticer Game in your phone settings, then try again.'
         : st.error;
     return (
       <View style={{ gap: 8 }} testID="mic-error">

@@ -27,6 +27,3 @@ export function playerLevel(xp: number): PlayerLevel {
     xpForNext: next ? next.xp - PLAYER_TITLES[i].xp : null,
   };
 }
-
-/** Stars needed in the previous world to open a world. */
-export const STARS_TO_UNLOCK_WORLD = 12;

@@ -2,7 +2,6 @@ import { Alert, Platform, Pressable, StyleSheet, Switch, Text, View } from 'reac
 import { Screen } from '../components/Screen';
 import { Button, Card, styles as ui } from '../components/ui';
 import { useProgress, type Settings } from '../store/progress';
-import type { StringStyle } from '../quiz/types';
 import { C } from '../theme/colors';
 
 function Row({ label, sub, children }: { label: string; sub?: string; children: React.ReactNode }) {
@@ -50,35 +49,16 @@ export default function SettingsScreen() {
   const st = progress.settings;
   const confirmReset = () => {
     if (Platform.OS === 'web') {
-      if ((globalThis as any).confirm?.('Reset all stars and XP?')) reset();
+      if ((globalThis as any).confirm?.('Reset all stars, badges and XP?')) reset();
       return;
     }
-    Alert.alert('Reset progress?', 'All stars and XP will be lost.', [
+    Alert.alert('Reset progress?', 'All stars, badges and XP will be lost.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Reset', style: 'destructive', onPress: reset },
     ]);
   };
   return (
     <Screen>
-      <Card style={{ gap: 4 }}>
-        <Row label="🎸 Guitar mode" sub="Answer play-it levels on your guitar through the mic. Off: tap the fret instead.">
-          <Toggle k="guitarMode" settings={st} update={updateSettings} />
-        </Row>
-        <Row label="Voice prompts" sub='Say prompts out loud, like "G on the D string".'>
-          <Toggle k="voice" settings={st} update={updateSettings} />
-        </Row>
-        <Row label="Call strings by">
-          <Choice<StringStyle>
-            value={st.stringStyle}
-            onChange={(v) => updateSettings({ stringStyle: v })}
-            options={[
-              { v: 'name', label: 'Name' },
-              { v: 'number', label: 'Number' },
-              { v: 'mixed', label: 'Both' },
-            ]}
-          />
-        </Row>
-      </Card>
       <Card style={{ gap: 4 }}>
         <Text style={ui.h2}>Microphone</Text>
         <Row label="Sensitivity" sub="Raise it for a quiet guitar, lower it in a noisy room.">
@@ -92,10 +72,10 @@ export default function SettingsScreen() {
             ]}
           />
         </Row>
-        <Row label="Forgive octave jumps" sub="Worlds 1-2: accept the right note one octave off.">
+        <Row label="Forgive octave jumps" sub="Accept the right note one octave off (the mic sometimes hears the octave).">
           <Toggle k="forgiveOctave" settings={st} update={updateSettings} />
         </Row>
-        <Row label="Timing offset" sub="If the beat drill always says late, move this left.">
+        <Row label="Timing offset" sub="If Metronome mode always says late, move this left.">
           <Choice<number>
             value={st.latencyMs}
             onChange={(v) => updateSettings({ latencyMs: v })}
@@ -110,9 +90,6 @@ export default function SettingsScreen() {
       </Card>
       <Card style={{ gap: 4 }}>
         <Text style={ui.h2}>Progress</Text>
-        <Row label="Practice mode" sub="Open every level without unlocking it.">
-          <Toggle k="unlockAll" settings={st} update={updateSettings} />
-        </Row>
         <Button title="Reset progress" kind="secondary" onPress={confirmReset} style={{ marginTop: 8 }} />
       </Card>
     </Screen>

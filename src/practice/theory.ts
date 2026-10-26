@@ -343,5 +343,5 @@ export function configFromCode(code: string, preferName?: string): ExerciseConfi
 
 /** Route to Live Practice for an exercise. */
 export function practiceHref(cfg: ExerciseConfig, reps = 1): string {
-  return `/practice/${practiceCode(cfg)}?name=${encodeURIComponent(cfg.name)}&reps=${reps}`;
+  return `/${practiceCode(cfg)}?name=${encodeURIComponent(cfg.name)}&reps=${reps}`;
 }

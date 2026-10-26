@@ -16,13 +16,9 @@ export default function RootLayout() {
           headerShadowVisible: false,
         }}
       >
-        <Stack.Screen name="index" options={{ headerShown: false, title: 'NoteTrainer' }} />
-        <Stack.Screen name="level/[id]" options={{ title: '' }} />
-        <Stack.Screen name="tuner" options={{ title: 'Tuner' }} />
-        <Stack.Screen name="rush" options={{ title: 'Note Rush' }} />
+        <Stack.Screen name="index" options={{ headerShown: false, title: 'Keypracticer Game' }} />
+        <Stack.Screen name="[code]" options={{ headerShown: false, title: 'Free play' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
-        <Stack.Screen name="practice/index" options={{ title: 'Live Practice' }} />
-        <Stack.Screen name="practice/[code]" options={{ title: 'Live Practice' }} />
       </Stack>
     </ProgressProvider>
   );

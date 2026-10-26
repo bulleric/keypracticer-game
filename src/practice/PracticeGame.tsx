@@ -8,7 +8,7 @@ import { buzz } from '../audio/haptics';
 import { Metronome } from '../audio/metronome';
 import { busyUntil, playNote, playNotes, stopNotes } from '../audio/notePlayer';
 import { MicPanel } from '../components/MicPanel';
-import { setDebug } from '../components/QuizPlayer';
+import { setDebug } from '../debug';
 import { Button, Confetti, Juicy, ProgressBar, Stars } from '../components/ui';
 import { playerLevel } from '../game/xp';
 import { noteLabel } from '../music/notes';
@@ -330,9 +330,11 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
       <ScrollView contentContainerStyle={[s.page, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 24 }]}>
         {/* Top bar */}
         <View style={s.top}>
-          <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} hitSlop={10} accessibilityLabel="Back">
-            <Text style={s.back}>‹</Text>
-          </Pressable>
+          {router.canGoBack() ? (
+            <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Back">
+              <Text style={s.back}>‹</Text>
+            </Pressable>
+          ) : null}
           <Pressable style={{ flex: 1 }} onPress={() => setPanel('levels')} testID="open-levels">
             <Text style={s.kicker}>{level ? `WORLD ${level.world} · LEVEL ${level.id}${level.boss ? ' · BOSS 👑' : ''}` : 'FREE PLAY'}</Text>
             <Text style={s.levelTitle} numberOfLines={1}>
@@ -709,6 +711,9 @@ function SettingsPanel({ setup, onChange, inLevel }: { setup: RunSetup; onChange
       <Chips label="PATTERN" options={[...PATTERNS]} value={setup.pattern} onPick={(pattern) => onChange({ pattern: pattern as RunSetup['pattern'] })} />
       <Chips label="TEMPO (METRONOME)" options={['50', '60', '70', '80', '90', '100', '120']} value={String(setup.bpm)} show={(v) => `${v}`} onPick={(v) => onChange({ bpm: Number(v) })} />
       <Chips label="NOTES PER CLICK" options={['1', '2']} value={String(setup.perBeat)} show={(v) => (v === '1' ? 'Quarters (1)' : 'Eighths (2)')} onPick={(v) => onChange({ perBeat: Number(v) as 1 | 2 })} />
+      <Pressable onPress={() => router.push('/settings')} style={s.chip} accessibilityRole="link" testID="open-app-settings">
+        <Text style={s.chipText}>🎤 Mic, timing and progress settings ›</Text>
+      </Pressable>
     </View>
   );
 }

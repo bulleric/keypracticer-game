@@ -1,14 +1,14 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Text, View } from 'react-native';
-import { Screen } from '../../components/Screen';
-import { Button, styles as ui } from '../../components/ui';
-import type { PentaScale } from '../../practice/game';
-import { PracticeGame } from '../../practice/PracticeGame';
-import { configFromCode, PATTERNS } from '../../practice/theory';
-import { useProgress } from '../../store/progress';
-import { C } from '../../theme/colors';
+import { Screen } from '../components/Screen';
+import { Button, styles as ui } from '../components/ui';
+import type { PentaScale } from '../practice/game';
+import { PracticeGame } from '../practice/PracticeGame';
+import { configFromCode, PATTERNS } from '../practice/theory';
+import { useProgress } from '../store/progress';
+import { C } from '../theme/colors';
 
-/** Free play from a Keypracticer video code, e.g. /practice/FPS2UD80 (pentatonic scales only). */
+/** Free play from a Keypracticer video code, e.g. /FPS2UD80 (pentatonic scales only). */
 export default function PracticeFromCode() {
   const { loaded } = useProgress();
   const { code } = useLocalSearchParams<{ code: string }>();
@@ -19,8 +19,8 @@ export default function PracticeFromCode() {
     return (
       <Screen>
         <Text style={ui.h2}>Unknown practice code</Text>
-        <Text style={ui.body}>"{raw}" is not a pentatonic exercise. Live Practice covers minor and major pentatonic for now.</Text>
-        <Button title="Go to Live Practice" onPress={() => router.replace('/practice')} />
+        <Text style={ui.body}>"{raw}" is not a pentatonic exercise. The game covers minor and major pentatonic for now.</Text>
+        <Button title="Back to the game" onPress={() => router.replace('/')} />
       </Screen>
     );
   }

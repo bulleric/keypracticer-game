@@ -1,24 +1,24 @@
 {
   "expo": {
-    "name": "NoteTrainer",
-    "slug": "notetrainer",
-    "scheme": "notetrainer",
+    "name": "Keypracticer Game",
+    "slug": "keypracticer-game",
+    "scheme": "keypracticer-game",
     "version": "0.1.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
-    "backgroundColor": "#14110f",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F5F5F0",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "de.sidibe.notetrainer",
+      "bundleIdentifier": "de.sidibe.keypracticergame",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "NoteTrainer listens to your guitar to check the notes you play."
+        "NSMicrophoneUsageDescription": "Keypracticer Game listens to your guitar to check the notes you play."
       }
     },
     "android": {
-      "package": "de.sidibe.notetrainer",
+      "package": "de.sidibe.keypracticergame",
       "adaptiveIcon": {
-        "backgroundColor": "#14110f",
+        "backgroundColor": "#F5F5F0",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -35,7 +35,7 @@
       [
         "react-native-audio-api",
         {
-          "iosMicrophonePermission": "NoteTrainer listens to your guitar to check the notes you play.",
+          "iosMicrophonePermission": "Keypracticer Game listens to your guitar to check the notes you play.",
           "iosBackgroundMode": false,
           "androidPermissions": ["android.permission.RECORD_AUDIO", "android.permission.MODIFY_AUDIO_SETTINGS"],
           "androidForegroundService": false
