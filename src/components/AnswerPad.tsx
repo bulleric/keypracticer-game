@@ -32,7 +32,7 @@ export function AnswerPad({
               styles.key,
               { flexBasis: `${100 / cols - 2}%` },
               isGood && { backgroundColor: C.good, borderColor: C.good },
-              isBad && { backgroundColor: '#5a2626', borderColor: C.bad },
+              isBad && { backgroundColor: C.bad, borderColor: C.bad },
               pressed && { transform: [{ scale: 0.95 }] },
             ]}
           >

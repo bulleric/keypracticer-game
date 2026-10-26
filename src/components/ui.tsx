@@ -36,7 +36,7 @@ export function Button({
         style,
       ]}
     >
-      <Text style={[styles.btnText, small && { fontSize: 14 }, kind === 'primary' ? { color: '#1d140a' } : { color: C.text }]}>
+      <Text style={[styles.btnText, small && { fontSize: 14 }, kind === 'primary' ? { color: C.onAccent } : { color: C.text }]}>
         {title}
       </Text>
     </Pressable>

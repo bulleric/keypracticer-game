@@ -22,6 +22,7 @@ class MicServiceImpl {
   private frameListeners = new Set<(f: PitchFrame) => void>();
   private noteListeners = new Set<(n: PlayedNote) => void>();
   private minRms = 0.01;
+  private holdMs = 150;
   private starting: Promise<void> | null = null;
 
   getState = () => this.state;
@@ -42,6 +43,12 @@ class MicServiceImpl {
   setSensitivity(v: number) {
     this.minRms = 0.03 * Math.pow(0.05, v); // 0.03 .. 0.0015
     if (this.tracker) this.tracker.minRms = this.minRms;
+  }
+
+  /** How long a note must hold before it counts. Live Practice uses a shorter time for fast runs. */
+  setHoldMs(ms: number) {
+    this.holdMs = ms;
+    if (this.tracker) this.tracker.holdMs = ms;
   }
 
   onFrame(l: (f: PitchFrame) => void) {
@@ -93,7 +100,7 @@ class MicServiceImpl {
   }
 
   private makeTracker(sampleRate: number) {
-    const t = new PitchTracker({ sampleRate, minRms: this.minRms, hopSize: Math.round(sampleRate / 86) });
+    const t = new PitchTracker({ sampleRate, minRms: this.minRms, holdMs: this.holdMs, hopSize: Math.round(sampleRate / 86) });
     t.onFrame((f) => this.frameListeners.forEach((l) => l(f)));
     t.onNote((n) => this.noteListeners.forEach((l) => l(n)));
     this.tracker = t;

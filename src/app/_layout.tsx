@@ -6,7 +6,7 @@ import { C } from '../theme/colors';
 export default function RootLayout() {
   return (
     <ProgressProvider>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: C.bg },
@@ -21,6 +21,8 @@ export default function RootLayout() {
         <Stack.Screen name="tuner" options={{ title: 'Tuner' }} />
         <Stack.Screen name="rush" options={{ title: 'Note Rush' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+        <Stack.Screen name="practice/index" options={{ title: 'Live Practice' }} />
+        <Stack.Screen name="practice/[code]" options={{ title: 'Live Practice' }} />
       </Stack>
     </ProgressProvider>
   );

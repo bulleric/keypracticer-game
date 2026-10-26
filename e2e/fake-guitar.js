@@ -95,7 +95,7 @@
     if (q.input === 'pad') return;
     bot.count++;
     let midi = q.acceptMidis[0];
-    if (bot.wrongEvery && bot.count % bot.wrongEvery === 0) midi += 2;
+    if (bot.wrongEvery && bot.count % bot.wrongEvery === 0) midi += bot.wrongStep ?? 2;
     let wait = bot.delay;
     if (info.rhythm && info.rhythm.promptTime) wait = 0.35;
     if (info.rhythm && info.rhythm.beatTime) {

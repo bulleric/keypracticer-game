@@ -6,6 +6,7 @@ import type { StringStyle } from '../quiz/types';
 import { STARS_TO_UNLOCK_WORLD } from '../game/xp';
 import { MicService } from '../pitch/MicService';
 import { setVoiceEnabled } from '../audio/speech';
+import { applyRun, EMPTY_PROFILE, type Badge, type PentaProfile, type RunSummary } from '../practice/game';
 
 export interface Settings {
   /** Answer play-it questions on a real guitar through the mic. Off = tap the board. */
@@ -33,6 +34,10 @@ export interface Progress {
   levels: Record<number, LevelProgress>;
   xp: number;
   rushBest: { tap: number; play: number };
+  /** Live Practice best results by practice code. */
+  practiceBest: Record<string, { score: number; stars: number }>;
+  /** Pentatonic Path: levels, badges, streak. */
+  penta: PentaProfile;
   settings: Settings;
 }
 
@@ -46,7 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   unlockAll: false,
 };
 
-const EMPTY: Progress = { levels: {}, xp: 0, rushBest: { tap: 0, play: 0 }, settings: DEFAULT_SETTINGS };
+const EMPTY: Progress = { levels: {}, xp: 0, rushBest: { tap: 0, play: 0 }, practiceBest: {}, penta: EMPTY_PROFILE, settings: DEFAULT_SETTINGS };
 const KEY = 'notetrainer.progress.v1';
 
 export function worldStars(p: Progress, world: number): number {
@@ -73,6 +78,11 @@ interface Ctx {
   loaded: boolean;
   recordRound(levelId: number, s: RoundSummary): { newBest: boolean; unlockedNext: boolean };
   recordRush(mode: 'tap' | 'play', score: number, xp: number): boolean;
+  /** Saves a Live Practice result; returns true for a new best score. */
+  recordPractice(code: string, score: number, stars: number, xp: number): boolean;
+  /** Saves a Pentatonic Path run and adds XP. */
+  recordPentaRun(r: RunSummary, xp: number): { newBadges: Badge[]; newBest: boolean; unlocked: number | null };
+  setPentaCurrent(levelId: number): void;
   updateSettings(s: Partial<Settings>): void;
   reset(): void;
 }
@@ -90,7 +100,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       .then((raw) => {
         if (raw) {
           const p = JSON.parse(raw) as Progress;
-          setProgress({ ...EMPTY, ...p, settings: { ...DEFAULT_SETTINGS, ...p.settings } });
+          setProgress({ ...EMPTY, ...p, penta: { ...EMPTY_PROFILE, ...p.penta }, settings: { ...DEFAULT_SETTINGS, ...p.settings } });
         }
       })
       .catch(() => {})
@@ -131,6 +141,26 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         const best = score > p.rushBest[mode];
         save({ ...p, xp: p.xp + xp, rushBest: { ...p.rushBest, [mode]: Math.max(score, p.rushBest[mode]) } });
         return best;
+      },
+      recordPractice(code, score, stars, xp) {
+        const p = ref.current;
+        const prev = p.practiceBest[code] ?? { score: 0, stars: 0 };
+        save({
+          ...p,
+          xp: p.xp + xp,
+          practiceBest: { ...p.practiceBest, [code]: { score: Math.max(prev.score, score), stars: Math.max(prev.stars, stars) } },
+        });
+        return score > prev.score;
+      },
+      recordPentaRun(r, xp) {
+        const p = ref.current;
+        const out = applyRun(p.penta, r);
+        save({ ...p, xp: p.xp + xp, penta: out.profile });
+        return { newBadges: out.newBadges, newBest: out.newBest, unlocked: out.unlocked };
+      },
+      setPentaCurrent(levelId) {
+        const p = ref.current;
+        if (p.penta.current !== levelId) save({ ...p, penta: { ...p.penta, current: levelId } });
       },
       updateSettings(s) {
         const p = ref.current;

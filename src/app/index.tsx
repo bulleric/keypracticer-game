@@ -37,6 +37,7 @@ export default function MapScreen() {
       </View>
 
       <View style={s.quick}>
+        <Button small title="🎸 Live Practice" onPress={() => router.push('/practice')} testID="go-practice" />
         <Button small kind="secondary" title="🎵 Tuner" onPress={() => router.push('/tuner')} testID="go-tuner" />
         <Button small kind="secondary" title="⚡ Note Rush" onPress={() => router.push('/rush')} testID="go-rush" />
         <Button small kind="secondary" title="⚙ Settings" onPress={() => router.push('/settings')} testID="go-settings" />
@@ -134,7 +135,7 @@ const s = StyleSheet.create({
     borderWidth: 3,
     borderColor: C.accent2,
   },
-  boss: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#b5452f', borderColor: C.star },
-  nodeText: { color: '#1d140a', fontWeight: '900', fontSize: 17 },
+  boss: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#8B4FD6', borderColor: C.star },
+  nodeText: { color: C.onAccent, fontWeight: '900', fontSize: 17 },
   nodeLabel: { color: C.dim, fontSize: 10, textAlign: 'center', marginTop: 2 },
 });

@@ -38,7 +38,7 @@ function Choice<T extends string | number>({ value, options, onChange }: { value
           onPress={() => onChange(o.v)}
           style={[s.chip, value === o.v && { backgroundColor: C.accent, borderColor: C.accent }]}
         >
-          <Text style={[s.chipText, value === o.v && { color: '#1d140a' }]}>{o.label}</Text>
+          <Text style={[s.chipText, value === o.v && { color: C.onAccent }]}>{o.label}</Text>
         </Pressable>
       ))}
     </View>

@@ -1,20 +1,28 @@
+/**
+ * App colours: the Keypracticer light theme (keypracticer-content-gen
+ * claude-design-assets/tokens/colors.css). Note colours by interval are in
+ * src/practice/reel.ts.
+ */
 export const C = {
-  bg: '#14110f',
-  panel: '#211c18',
-  panel2: '#2b241f',
-  border: '#3a312a',
-  text: '#f5ede4',
-  dim: '#b3a596',
-  faint: '#7d7064',
-  accent: '#f2a541',
-  accent2: '#ffcf70',
-  good: '#4cc38a',
-  bad: '#ef5b5b',
-  hint: '#6aa9ff',
-  wood: '#5a3a22',
-  woodDark: '#3e2716',
-  fret: '#c9c2b8',
-  string: '#e8dcc8',
-  star: '#ffd23f',
-  locked: '#4a4038',
+  bg: '#F5F5F0',
+  panel: '#FFFFFF',
+  panel2: '#E8E8E2',
+  border: '#D4D4CD',
+  text: '#16181D',
+  dim: '#4A4D55',
+  faint: '#73767E',
+  /** Keypracticer root red: buttons and highlights. */
+  accent: '#E8452C',
+  /** Darker red for text on light backgrounds. */
+  accent2: '#B8341F',
+  onAccent: '#FFFFFF',
+  good: '#1E9E6A',
+  bad: '#D23F3F',
+  hint: '#2B6FD6',
+  wood: '#E8E8E2',
+  woodDark: '#D4D4CD',
+  fret: '#B9B9B2',
+  string: '#9A9A93',
+  star: '#E0A100',
+  locked: '#D4D4CD',
 };
