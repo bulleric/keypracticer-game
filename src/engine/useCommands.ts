@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 import { busyUntil } from '../audio/notePlayer';
 import { MicService } from '../pitch/MicService';
 import { setDebug } from '../debug';
-import { feedCommand, IDLE, type Command, type CommandState } from './commands';
+import { commandForMidi, feedCommand, IDLE, type Command, type CommandState } from './commands';
 
 /**
  * The intent bus. Every action the player can take between runs is a Command.
@@ -85,6 +85,12 @@ export function activeCommands(): Command[] {
 
 // ---- the guitar: one listener on the mic for the whole app
 let cmdState: CommandState = IDLE;
+/**
+ * Set when a new screen starts listening: a string still ringing from the
+ * screen before (the tuner, the last note of a run) must stop first, so it
+ * can't press a button on the new screen by accident.
+ */
+let needSilence = false;
 let wired = false;
 function wire() {
   if (wired) return;
@@ -100,6 +106,10 @@ function wire() {
       cmdState = IDLE;
       if (hold.cmd) setHold({ ...hold, cmd: null, progress: 0 });
       return;
+    }
+    if (needSilence) {
+      if (f.note && commandForMidi(f.note.midi)) return;
+      needSilence = false;
     }
     const top = stack[stack.length - 1];
     const out = feedCommand(cmdState, { midi: f.note?.midi ?? null, cents: f.note?.cents, time: f.time });
@@ -140,6 +150,7 @@ export function useCommands(handlers: Handlers, active = true) {
       const layer: Layer = { id: nextId++, handlers: ref };
       stack.push(layer);
       cmdState = IDLE;
+      needSilence = true;
       // Commands need ears: start the mic if the player allowed it.
       if (enabled && micAllowed) MicService.start().catch(() => {});
       publish();
