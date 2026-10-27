@@ -7,12 +7,18 @@ import { resumeAudio } from '../audio/context';
 import { buzz } from '../audio/haptics';
 import { Metronome } from '../audio/metronome';
 import { busyUntil, playNote, playNotes, stopNotes } from '../audio/notePlayer';
+import { CmdButton } from '../components/CmdButton';
 import { MicPanel } from '../components/MicPanel';
 import { setDebug } from '../debug';
+import { describeMiss, whereIs } from '../engine/coach';
+import { FLOW } from '../engine/flow';
+import { boxLowFret, fromSource } from '../engine/timeline';
+import { useCommands } from '../engine/useCommands';
 import { Button, Confetti, Juicy, ProgressBar, Stars } from '../components/ui';
 import { playerLevel } from '../game/xp';
 import { noteLabel } from '../music/notes';
 import { MicService, useMicNotes, useMicState } from '../pitch/MicService';
+import { todaySeconds } from '../store/model';
 import { useProgress } from '../store/progress';
 import { C } from '../theme/colors';
 import {
@@ -26,13 +32,18 @@ import {
   startMetro, startPractice, type Grade, type MetroState, type PracticeResult, type PracticeState,
 } from './session';
 import { TheoryPanel } from './TheoryPanel';
-import { buildExercise, PATTERNS, ROOTS } from './theory';
+import { PATTERNS, ROOTS } from './theory';
 
 const HOLD_MS = 90;
 const SLIDE_S = 0.16;
 const FX_S = 0.45;
 const COUNT_IN = 4;
+/** Play mode: show where the note is after this long without a right note. */
+const HINT_AFTER_S = 6;
+/** Play mode: pause after this long without any note. */
+const PAUSE_AFTER_S = 10;
 
+type View_ = 'listen' | 'run';
 type Panel = 'none' | 'settings' | 'levels' | 'theory';
 
 interface Done {
@@ -45,18 +56,30 @@ interface Done {
 }
 
 /**
- * Live Practice as a game. Opens on a ready-to-play level; everything can be
- * changed while playing (mode, key, box, pattern, tempo).
+ * Live Practice as a game. Three views of one exercise: Listen (the app plays
+ * it), Play (each note waits for you) and On the beat (metronome). The guitar
+ * works as a remote whenever the app is not waiting for a scale note.
  */
-export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId: number | null; setup: RunSetup }) {
-  const { progress, recordPentaRun, setPentaCurrent } = useProgress();
+export function PracticeGame({
+  levelId: startId,
+  setup: startSetup,
+  initialView = 'run',
+}: {
+  levelId: number | null;
+  setup: RunSetup;
+  initialView?: View_;
+}) {
+  const { progress, recordPentaRun, setPentaCurrent, markRung, addPracticeTime } = useProgress();
   const insets = useSafeAreaInsets();
   const mic = useMicState();
   const [levelId, setLevelId] = useState<number | null>(startId);
   const [setup, setSetup] = useState<RunSetup>(startSetup);
+  const [view, setView] = useState<View_>(initialView);
   const level = levelId ? getLevel(levelId) : undefined;
-  const exercise = useMemo(() => buildExercise(toExercise(setup)), [setup]);
+  const timeline = useMemo(() => fromSource({ kind: 'scale', setup }), [setup]);
+  const exercise = timeline.exercise;
   const targets = useMemo(() => exercise.notes.map((n) => n.midi), [exercise]);
+  const lowFret = useMemo(() => boxLowFret(timeline), [timeline]);
   const [panel, setPanel] = useState<Panel>('none');
   const [run, setRun] = useState(0);
   const forgive = progress.settings.forgiveOctave;
@@ -73,18 +96,32 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
   const metronome = useRef<Metronome | null>(null);
   const [countIn, setCountIn] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
-  // ---- listen (demo) and results
+  // ---- listen and results
   const [demo, setDemo] = useState<{ start: number; step: number } | null>(null);
+  const [listenBpm, setListenBpm] = useState(() => (startSetup.mode === 'metronome' ? startSetup.bpm : 70));
+  const [loop, setLoop] = useState(false);
+  const loopRef = useRef(loop);
+  loopRef.current = loop;
   const [done, setDone] = useState<Done | null>(null);
   const [popup, setPopup] = useState<{ text: string; color: string; key: number } | null>(null);
   const [shake, setShake] = useState(0);
   const [pop, setPop] = useState(0);
   const [, setTick] = useState(0);
+  // ---- coach
+  const [coach, setCoach] = useState<{ text: string; key: number } | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const lastHeard = useRef(now());
+  const lastHit = useRef(now());
+  const missesHere = useRef(0);
+  const runStart = useRef<number | null>(null);
 
   const isMetro = setup.mode === 'metronome';
+  const listening = view === 'listen';
   const step = 60 / setup.bpm / setup.perBeat;
 
   const flash = useCallback((text: string, color: string) => setPopup((p) => ({ text, color, key: (p?.key ?? 0) + 1 })), []);
+  const say = useCallback((text: string) => setCoach((c) => ({ text, key: (c?.key ?? 0) + 1 })), []);
   // Pop-ups go away on their own.
   useEffect(() => {
     if (!popup) return;
@@ -92,16 +129,18 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
     return () => clearTimeout(t);
   }, [popup]);
 
-  // ---- mic on from the start, shorter confirm time for fast runs
+  // ---- mic on from the start (unless the player said no), shorter confirm time for fast runs
+  const micAllowed = progress.onboarding.mic !== 'denied';
   useEffect(() => {
     MicService.setHoldMs(HOLD_MS);
     resumeAudio().catch(() => {});
-    MicService.start();
+    if (micAllowed) MicService.start();
     return () => {
       MicService.setHoldMs(150);
       metronome.current?.stop();
       stopNotes();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -124,11 +163,17 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
     setDemo(null);
     setDone(null);
     setPopup(null);
+    setCoach(null);
+    setPaused(false);
+    missesHere.current = 0;
+    runStart.current = null;
+    lastHeard.current = now();
+    lastHit.current = now();
     setRun((r) => r + 1);
   }, [targets]);
   useEffect(() => {
     reset();
-  }, [reset, setup.mode, setup.bpm, setup.perBeat]);
+  }, [reset, setup.mode, setup.bpm, setup.perBeat, view]);
 
   // ---- finishing a run
   const finish = useCallback(
@@ -136,7 +181,8 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
       metronome.current?.stop();
       setPlaying(false);
       const xp = Math.round(r.score / 20);
-      const out = recordPentaRun({ levelId, setup, score: r.score, stars: r.stars, accuracy: r.accuracy, bestCombo: r.bestCombo, perfectRun }, xp);
+      const seconds = runStart.current ? now() - runStart.current : r.seconds;
+      const out = recordPentaRun({ levelId, setup, score: r.score, stars: r.stars, accuracy: r.accuracy, bestCombo: r.bestCombo, perfectRun }, xp, seconds);
       setDone({ result: r, grades, xp, ...out });
       buzz(r.stars >= 1 ? 'win' : 'bad');
     },
@@ -145,15 +191,20 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
 
   // ---- mic notes
   useMicNotes((n) => {
-    if (done || demo) return;
+    if (done || demo || listening || paused) return;
     if (n.onsetTime < busyUntil()) return; // our own speaker
+    if (n.attack) lastHeard.current = now();
     if (!isMetro) {
       const prev = detRef.current;
       const next = onHeard(prev, { midi: n.midi, time: n.onsetTime, attack: n.attack }, forgive);
       if (next === prev) return;
       detRef.current = next;
       setDet(next);
+      if (runStart.current === null) runStart.current = now();
       if (next.last?.kind === 'hit') {
+        lastHit.current = now();
+        missesHere.current = 0;
+        setCoach(null);
         setPop((p) => p + 1);
         const m = multiplier(next.combo);
         if (m > multiplier(prev.combo)) flash(`COMBO x${m}!`, C.star);
@@ -163,6 +214,9 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
         setShake((k) => k + 1);
         buzz('bad');
         flash(`WRONG: ${noteLabel(n.midi)}`, C.bad);
+        missesHere.current += 1;
+        const t = exercise.notes[prev.index];
+        if (t) say(describeMiss(t, n.midi) + (missesHere.current >= 3 ? ' Tap Hear to listen to it.' : ''));
       }
       return;
     }
@@ -193,8 +247,9 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
   // ---- metronome run
   const startMetroRun = async () => {
     reset();
+    setNotice(null);
     await resumeAudio().catch(() => {});
-    await MicService.start();
+    if (micAllowed) await MicService.start();
     const m = new Metronome(setup.bpm);
     metronome.current = m;
     let t0: number | null = null;
@@ -204,6 +259,8 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
         const s = startMetro(targets, t0, step);
         metroRef.current = s;
         setMetro(s);
+        lastHeard.current = t0;
+        runStart.current = now();
       }
       setCountIn(b.index < COUNT_IN ? COUNT_IN - b.index : null);
     });
@@ -214,42 +271,82 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
     reset();
   };
 
-  // Ticker: misses in metronome mode, and animation frames.
-  const metroActive = isMetro && playing && !!metro && !metro.done;
+  // Ticker: misses and silence in metronome mode, and animation frames.
+  const metroActive = isMetro && playing && !!metro && !metro.done && !listening;
   useEffect(() => {
     if (!metroActive && !demo) return;
     let id = 0;
-    const loop = () => {
+    const loopFn = () => {
       const cur = metroRef.current;
-      if (cur && !cur.done && isMetro) {
-        const next = metroTick(cur, now());
+      if (cur && !cur.done && isMetro && !listening) {
+        const t = now();
+        const next = metroTick(cur, t);
         if (next !== cur) {
           metroRef.current = next;
           setMetro(next);
           onGraded(cur, next);
         }
+        // Two bars without a note: the player stopped, so stop the run.
+        if (t > cur.t0 && t - Math.max(lastHeard.current, cur.t0) > (8 * 60) / setup.bpm && !next.done) {
+          reset();
+          setNotice('Stopped: no notes for two bars. Start again when you are ready.');
+          return;
+        }
       }
-      if (demo && now() > demo.start + targets.length * demo.step + 0.4) setDemo(null);
-      setTick((t) => t + 1);
-      id = requestAnimationFrame(loop);
+      if (demo && now() > demo.start + targets.length * demo.step + 0.4) onDemoEnd();
+      setTick((x) => x + 1);
+      id = requestAnimationFrame(loopFn);
     };
-    id = requestAnimationFrame(loop);
+    id = requestAnimationFrame(loopFn);
     return () => cancelAnimationFrame(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metroActive, demo]);
 
-  // ---- practice tools (detect mode)
+  // Coach and pause by silence (Play mode).
+  const coachRef = useRef(coach);
+  coachRef.current = coach;
+  useEffect(() => {
+    if (isMetro || listening || done || paused || demo) return;
+    const id = setInterval(() => {
+      const d = detRef.current;
+      if (d.done) return;
+      const t = now();
+      const t0 = exercise.notes[d.index];
+      if (d.hits > 0 && t - Math.max(lastHeard.current, lastHit.current) > PAUSE_AFTER_S) {
+        setPaused(true);
+        setCoach(null);
+        return;
+      }
+      if (t0 && t - lastHit.current > HINT_AFTER_S && !coachRef.current) say(`${whereIs(t0, lowFret)}.`);
+    }, 500);
+    return () => clearInterval(id);
+  }, [isMetro, listening, done, paused, demo, exercise, lowFret, say]);
+
+  // ---- practice tools
   const hear = () => playNote(targets[Math.min(det.index, targets.length - 1)]);
-  const listen = async () => {
-    const st = 0.42;
-    const start = await playNotes(targets, st, 1.0);
-    setDemo({ start, step: st });
+  const listenStep = 60 / listenBpm / (setup.mode === 'metronome' ? setup.perBeat : 1);
+  const startListen = async () => {
+    const start = await playNotes(targets, listenStep, 1.0);
+    setDemo({ start, step: listenStep });
+  };
+  const stopListen = () => {
+    stopNotes();
+    setDemo(null);
+  };
+  const onDemoEnd = () => {
+    const d = demo;
+    setDemo(null);
+    if (!listening || !d) return;
+    if (levelId) markRung(levelId, 'listen');
+    addPracticeTime(targets.length * d.step);
+    if (loopRef.current) setTimeout(() => startListen(), 400);
   };
   const doSkip = () => {
     const next = skip(detRef.current);
     detRef.current = next;
     setDet(next);
     MicService.resetNote();
+    setCoach(null);
     if (next.done) finish(result(next), 0);
   };
   const doBack = () => {
@@ -257,6 +354,16 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
     detRef.current = next;
     setDet(next);
     MicService.resetNote();
+  };
+  const resume = () => {
+    setPaused(false);
+    lastHeard.current = now();
+    lastHit.current = now();
+    MicService.resetNote();
+  };
+  const toLesson = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
   };
 
   // ---- strip position
@@ -266,32 +373,14 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
   if (demo) {
     cursor = Math.max(0, (now() - demo.start) / demo.step);
     index = Math.min(targets.length - 1, Math.round(cursor));
+  } else if (listening) {
+    cursor = 0;
+    index = 0;
   } else if (isMetro) {
     cursor = metro ? Math.min(targets.length, (now() - metro.t0) / metro.step) : 0;
     index = metro ? Math.max(0, Math.min(targets.length - 1, Math.round(cursor))) : 0;
   }
-  const feedback = useFeedback(isMetro ? metro?.last ?? null : det.last);
-
-  // ---- for the e2e bot: what to play now (and when, in metronome mode)
-  const nextSlot = metro ? metro.grades.findIndex((g) => g === null) : -1;
-  const question = useMemo(() => {
-    if (done || demo) return null;
-    if (!isMetro) return det.done ? null : { id: `${run}-d${det.index}`, acceptMidis: [targets[det.index]] };
-    if (!metro || nextSlot < 0) return null;
-    return { id: `${run}-m${nextSlot}`, acceptMidis: [targets[nextSlot]] };
-  }, [done, demo, isMetro, det.done, det.index, run, targets, metro?.t0, nextSlot]);
-  useEffect(() => {
-    const rhythm = isMetro && metro && nextSlot >= 0 ? { beatTime: metro.t0 + nextSlot * metro.step } : undefined;
-    setDebug({
-      question,
-      micOn: mic.status === 'on',
-      rhythm,
-      practice: isMetro
-        ? { mode: 'metronome', index: nextSlot, score: metro?.score ?? 0, grades: metro ? gradeCounts(metro) : null, done: !!done }
-        : { mode: 'detect', index: det.index, score: det.score, hits: det.hits, misses: det.misses, done: !!done },
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [question, mic.status, done]);
+  const feedback = useFeedback(listening ? null : isMetro ? metro?.last ?? null : det.last);
 
   // ---- settings changes (leave the level for free play)
   const change = (p: Partial<RunSetup>) => {
@@ -299,18 +388,68 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
     if (levelId && JSON.stringify(next) !== JSON.stringify(level?.setup)) setLevelId(null);
     setSetup(next);
   };
+  const pickMode = (m: 'listen' | PracticeMode) => {
+    if (m === 'listen') {
+      setView('listen');
+      return;
+    }
+    setView('run');
+    if (m !== setup.mode) change({ mode: m });
+  };
   const loadLevel = (l: Level) => {
     setLevelId(l.id);
     setSetup(l.setup);
     setPanel('none');
+    setView('run');
   };
   const nextLevel = levelId ? getLevel(levelId + 1) : undefined;
+  const nextOpen = nextLevel && isLevelOpen(progress.penta, nextLevel.id) ? nextLevel : undefined;
+
+  // ---- sound remote: only when the app is not waiting for a scale note
+  const commandsOn = panel === 'none' && (!!done || paused || listening || (isMetro && !playing));
+  useCommands(
+    done
+      ? {
+          ENTER: () => (nextOpen && done.result.stars >= 1 ? loadLevel(nextOpen) : reset()),
+          AGAIN: reset,
+          BACK: toLesson,
+        }
+      : paused
+        ? { ENTER: resume, AGAIN: reset, DEMO: hear, BACK: toLesson }
+        : listening
+          ? { ENTER: () => pickMode(setup.mode), DEMO: () => (demo ? stopListen() : startListen()), BACK: toLesson }
+          : { ENTER: startMetroRun, DEMO: () => pickMode('listen'), BACK: toLesson },
+    commandsOn,
+  );
+
+  // ---- for the e2e bot: what to play now (and when, in metronome mode)
+  const nextSlot = metro ? metro.grades.findIndex((g) => g === null) : -1;
+  const question = useMemo(() => {
+    if (done || demo || listening || paused) return null;
+    if (!isMetro) return det.done ? null : { id: `${run}-d${det.index}`, acceptMidis: [targets[det.index]] };
+    if (!metro || nextSlot < 0) return null;
+    return { id: `${run}-m${nextSlot}`, acceptMidis: [targets[nextSlot]] };
+  }, [done, demo, listening, paused, isMetro, det.done, det.index, run, targets, metro?.t0, nextSlot]);
+  useEffect(() => {
+    const rhythm = isMetro && metro && nextSlot >= 0 ? { beatTime: metro.t0 + nextSlot * metro.step } : undefined;
+    setDebug({
+      question,
+      micOn: mic.status === 'on',
+      rhythm,
+      view,
+      paused,
+      practice: isMetro
+        ? { mode: 'metronome', index: nextSlot, score: metro?.score ?? 0, grades: metro ? gradeCounts(metro) : null, done: !!done }
+        : { mode: 'detect', index: det.index, score: det.score, hits: det.hits, misses: det.misses, done: !!done },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [question, mic.status, done, view, paused]);
 
   // ---- numbers for the HUD
   const score = isMetro ? metro?.score ?? 0 : det.score;
   const combo = isMetro ? metro?.combo ?? 0 : det.combo;
   const total = targets.length;
-  const progressFrac = isMetro ? (metro ? metro.grades.filter(Boolean).length / total : 0) : det.index / total;
+  const progressFrac = listening ? (demo ? Math.min(1, cursor / total) : 0) : isMetro ? (metro ? metro.grades.filter(Boolean).length / total : 0) : det.index / total;
   const accuracy = isMetro
     ? metro && metro.grades.some(Boolean)
       ? metro.grades.reduce((a, g) => a + (g ? GRADE[g].weight : 0), 0) / metro.grades.filter(Boolean).length
@@ -322,7 +461,9 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
   const penta = progress.penta;
   const stars = totalPentaStars(penta);
 
-  const meta = `${exercise.subtitle.replace('Scale | ', '')} | ${isMetro ? `${setup.bpm} BPM${setup.perBeat === 2 ? ' eighths' : ''}` : 'Detect'}`;
+  const meta = `${exercise.subtitle.replace('Scale | ', '')} | ${listening ? `Listen · ${listenBpm} BPM` : isMetro ? `${setup.bpm} BPM${setup.perBeat === 2 ? ' eighths' : ''}` : 'Play'}`;
+  const runLabel = isMetro ? 'On the beat' : 'Play';
+  const cur = exercise.notes[Math.min(det.index, total - 1)];
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -330,13 +471,11 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
       <ScrollView contentContainerStyle={[s.page, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 24 }]}>
         {/* Top bar */}
         <View style={s.top}>
-          {router.canGoBack() ? (
-            <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Back">
-              <Text style={s.back}>‹</Text>
-            </Pressable>
-          ) : null}
+          <Pressable onPress={toLesson} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back to the lesson" testID="to-lesson">
+            <Text style={s.back}>‹</Text>
+          </Pressable>
           <Pressable style={{ flex: 1 }} onPress={() => setPanel('levels')} testID="open-levels">
-            <Text style={s.kicker}>{level ? `WORLD ${level.world} · LEVEL ${level.id}${level.boss ? ' · BOSS 👑' : ''}` : 'FREE PLAY'}</Text>
+            <Text style={s.kicker}>{level ? `WORLD ${level.world} · LESSON ${level.id}${level.boss ? ' · BOSS 👑' : ''}` : 'FREE PLAY'}</Text>
             <Text style={s.levelTitle} numberOfLines={1}>
               {level ? level.title : exercise.title}
             </Text>
@@ -359,28 +498,35 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
 
         {/* Tabs for the panels */}
         <View style={s.tabs}>
-          <Tab label="🗺 Levels" onPress={() => setPanel('levels')} testID="tab-levels" />
+          <Tab label="🗺 Path" onPress={() => setPanel('levels')} testID="tab-levels" />
           <Tab label="📚 Theory" onPress={() => setPanel('theory')} testID="tab-theory" />
           <Tab label="⚙ Settings" onPress={() => setPanel('settings')} testID="tab-settings" />
         </View>
 
-        {/* Mode switch */}
-        <View style={s.segment}>
-          {(['detect', 'metronome'] as PracticeMode[]).map((m) => (
-            <Pressable key={m} onPress={() => change({ mode: m })} style={[s.segBtn, setup.mode === m && s.segOn]} testID={`mode-${m}`}>
-              <Text style={[s.segText, setup.mode === m && { color: C.onAccent }]}>{m === 'detect' ? '🎯 Detect' : '🥁 Metronome'}</Text>
-            </Pressable>
-          ))}
+        {/* Mode switch: Listen, Play (each note waits), On the beat (metronome) */}
+        <View style={s.segment} accessibilityRole="tablist">
+          {(['listen', 'detect', 'metronome'] as const).map((m) => {
+            const on = m === 'listen' ? listening : !listening && setup.mode === m;
+            return (
+              <Pressable key={m} onPress={() => pickMode(m)} style={[s.segBtn, on && s.segOn]} testID={`mode-${m}`} accessibilityRole="tab" accessibilityState={{ selected: on }}>
+                <Text style={[s.segText, on && { color: C.onAccent }]}>{m === 'listen' ? '👂 Listen' : m === 'detect' ? '🎸 Play' : '🥁 Beat'}</Text>
+              </Pressable>
+            );
+          })}
         </View>
 
         {/* HUD */}
-        <View style={s.hud}>
-          <Hud label="SCORE" value={String(score)} testID="hud-score" />
-          <Hud label="COMBO" value={`${combo >= 8 ? '🔥' : ''}x${multiplier(combo)} · ${combo}`} color={combo >= 8 ? C.accent : C.text} />
-          <Hud label="ACCURACY" value={accuracy === null ? '–' : `${Math.round(accuracy * 100)}%`} />
-          <Hud label="BEST" value={level ? String(penta.levels[level.id]?.best ?? '–') : '–'} />
-        </View>
-        <ProgressBar value={progressFrac} color={C.good} />
+        {listening ? (
+          <Text style={s.modeHint}>The app plays the exercise for you. Follow the dot and listen to each note.</Text>
+        ) : (
+          <View style={s.hud}>
+            <Hud label="SCORE" value={String(score)} testID="hud-score" />
+            <Hud label="COMBO" value={`${combo >= 8 ? '🔥' : ''}x${multiplier(combo)} · ${combo}`} color={combo >= 8 ? C.accent : C.text} />
+            <Hud label="ACCURACY" value={accuracy === null ? '–' : `${Math.round(accuracy * 100)}%`} />
+            <Hud label="BEST" value={level ? String(penta.levels[level.id]?.best ?? '–') : '–'} />
+          </View>
+        )}
+        <ProgressBar value={progressFrac} color={listening ? C.hint : C.good} />
 
         {/* The reel */}
         <View>
@@ -397,10 +543,46 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
               </Text>
             </View>
           ) : null}
+          {paused ? (
+            <View style={s.pausedWrap} testID="paused">
+              <View style={s.pausedCard}>
+                <Text style={s.pausedTitle}>Paused</Text>
+                <Text style={s.hint}>{FLOW.paused.hint}</Text>
+                {cur ? <Text style={s.message}>Next: {cur.name} ({cur.interval}) · {whereIs(cur, lowFret)}</Text> : null}
+                <CmdButton title="Continue" cmd="ENTER" onPress={resume} testID="pause-continue" />
+                <View style={s.row2}>
+                  <CmdButton small kind="secondary" title="Hear it" cmd="DEMO" onPress={hear} style={{ flex: 1 }} />
+                  <CmdButton small kind="secondary" title="Restart" cmd="AGAIN" onPress={reset} style={{ flex: 1 }} />
+                </View>
+                <CmdButton small kind="ghost" title="Back to the lesson" cmd="BACK" onPress={toLesson} />
+              </View>
+            </View>
+          ) : null}
         </View>
 
         {/* Controls */}
-        {!isMetro ? (
+        {listening ? (
+          <View style={{ gap: 8 }} testID="listen-controls">
+            <View style={s.tools}>
+              <Tool icon="−" label="Slower" onPress={() => setListenBpm((b) => Math.max(40, b - 10))} />
+              <View style={{ alignItems: 'center', minWidth: 90 }}>
+                <Text style={s.bpm}>{listenBpm}</Text>
+                <Text style={s.toolLabel}>BPM</Text>
+              </View>
+              <Tool icon="+" label="Faster" onPress={() => setListenBpm((b) => Math.min(160, b + 10))} />
+              <Tool icon="🔁" label={loop ? 'Loop on' : 'Loop off'} onPress={() => setLoop((l) => !l)} testID="listen-loop" active={loop} />
+            </View>
+            <CmdButton
+              title={demo ? 'Stop' : 'Play it for me'}
+              icon={demo ? '■' : '▶'}
+              cmd="DEMO"
+              kind={demo ? 'secondary' : 'primary'}
+              onPress={demo ? stopListen : startListen}
+              testID="listen-play"
+            />
+            <CmdButton title={`I'm ready: ${runLabel}`} cmd="ENTER" kind="secondary" onPress={() => pickMode(setup.mode)} testID="listen-ready" />
+          </View>
+        ) : !isMetro ? (
           <View style={{ gap: 8 }}>
             <Text style={s.message} testID="practice-message">
               {demo
@@ -408,14 +590,19 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
                 : det.done
                   ? ' '
                   : det.index === 0 && det.hits === 0
-                  ? `Play ${noteLabel(targets[0])} to start. The note waits for you.`
-                  : `Next: ${exercise.notes[det.index]?.name ?? ''} (${exercise.notes[det.index]?.interval ?? ''}) · fret ${exercise.notes[det.index]?.fret ?? ''}`}
+                    ? `Play ${cur?.name ?? noteLabel(targets[0])} to start: ${cur ? whereIs(cur, lowFret) : ''}. The note waits for you.`
+                    : `Next: ${cur?.name ?? ''} (${cur?.interval ?? ''}) · fret ${cur?.fret ?? ''}`}
             </Text>
+            {coach && !det.done ? (
+              <View style={s.coach} testID="coach">
+                <Text style={s.coachText}>{coach.text}</Text>
+              </View>
+            ) : null}
             <View style={s.tools}>
               <Tool icon="⏮" label="Back" onPress={doBack} disabled={det.index === 0} testID="tool-back" />
               <Tool icon="🔊" label="Hear" onPress={hear} testID="tool-hear" />
               <Tool icon="⏭" label="Skip" onPress={doSkip} testID="tool-skip" />
-              <Tool icon="▶" label="Listen" onPress={listen} testID="tool-listen" />
+              <Tool icon="⏸" label="Pause" onPress={() => setPaused(true)} testID="tool-pause" />
               <Tool icon="↺" label="Restart" onPress={reset} testID="tool-restart" />
             </View>
           </View>
@@ -432,9 +619,14 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
             {playing ? (
               <Button title="■ Stop" kind="secondary" onPress={stopMetroRun} testID="metro-stop" />
             ) : (
-              <Button title="▶ Start with metronome" onPress={startMetroRun} testID="metro-start" />
+              <CmdButton title="Start with metronome" icon="▶" cmd="ENTER" onPress={startMetroRun} testID="metro-start" />
             )}
-            <Text style={s.hint}>4 clicks count you in. Every note is graded PERFECT, GREAT, GOOD, WRONG or MISS.</Text>
+            {notice && !playing ? (
+              <View style={s.coach} testID="notice">
+                <Text style={s.coachText}>{notice}</Text>
+              </View>
+            ) : null}
+            <Text style={s.hint}>4 clicks count you in. Every note is graded PERFECT, GREAT, GOOD, WRONG or MISS. Stop playing for two bars to stop.</Text>
           </View>
         )}
 
@@ -443,8 +635,17 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
             <Text style={s.tip}>💡 {level.tip}</Text>
           </View>
         ) : null}
-        <MicPanel />
-        {mic.status !== 'on' && mic.status !== 'starting' ? <Button title="🎤 Start the mic" onPress={() => MicService.start()} testID="practice-mic" /> : null}
+        {listening ? null : micAllowed ? (
+          <>
+            <MicPanel onUseTaps={() => setView('listen')} />
+            {mic.status !== 'on' && mic.status !== 'starting' ? <Button title="🎤 Start the mic" onPress={() => MicService.start()} testID="practice-mic" /> : null}
+          </>
+        ) : (
+          <View style={s.coach}>
+            <Text style={s.coachText}>The mic is off, so nothing is graded. Listen mode works without it.</Text>
+            <Button small kind="secondary" title="🎤 Turn on the mic" onPress={() => MicService.start()} testID="practice-mic" />
+          </View>
+        )}
       </ScrollView>
 
       {/* Results */}
@@ -452,10 +653,12 @@ export function PracticeGame({ levelId: startId, setup: startSetup }: { levelId:
         <Results
           done={done}
           level={level}
-          nextLevel={nextLevel && isLevelOpen(penta, nextLevel.id) ? nextLevel : undefined}
+          nextLevel={nextOpen}
+          today={todaySeconds(progress)}
+          goalMin={progress.onboarding.goalMin}
           onAgain={reset}
-          onNext={() => nextLevel && loadLevel(nextLevel)}
-          onLevels={() => setPanel('levels')}
+          onNext={() => nextOpen && loadLevel(nextOpen)}
+          onLesson={toLesson}
         />
       ) : null}
 
@@ -558,9 +761,9 @@ function Tab({ label, onPress, testID }: { label: string; onPress: () => void; t
   );
 }
 
-function Tool({ icon, label, onPress, disabled, testID }: { icon: string; label: string; onPress: () => void; disabled?: boolean; testID?: string }) {
+function Tool({ icon, label, onPress, disabled, testID, active }: { icon: string; label: string; onPress: () => void; disabled?: boolean; testID?: string; active?: boolean }) {
   return (
-    <Pressable onPress={onPress} disabled={disabled} style={({ pressed }) => [s.tool, pressed && { transform: [{ scale: 0.94 }] }, disabled && { opacity: 0.35 }]} testID={testID} accessibilityRole="button" accessibilityLabel={label}>
+    <Pressable onPress={onPress} disabled={disabled} style={({ pressed }) => [s.tool, active && s.toolOn, pressed && { transform: [{ scale: 0.94 }] }, disabled && { opacity: 0.35 }]} testID={testID} accessibilityRole="button" accessibilityLabel={label} accessibilityState={active !== undefined ? { selected: active } : undefined}>
       <Text style={s.toolIcon}>{icon}</Text>
       <Text style={s.toolLabel}>{label}</Text>
     </Pressable>
@@ -587,51 +790,79 @@ function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () 
   );
 }
 
-function Results({ done, level, nextLevel, onAgain, onNext, onLevels }: { done: Done; level?: Level; nextLevel?: Level; onAgain: () => void; onNext: () => void; onLevels: () => void }) {
+function Results({
+  done,
+  level,
+  nextLevel,
+  today,
+  goalMin,
+  onAgain,
+  onNext,
+  onLesson,
+}: {
+  done: Done;
+  level?: Level;
+  nextLevel?: Level;
+  today: number;
+  goalMin: number;
+  onAgain: () => void;
+  onNext: () => void;
+  onLesson: () => void;
+}) {
   const r = done.result;
   const passed = r.stars >= 1;
+  const mins = Math.round(today / 60);
   return (
     <View style={s.resultsWrap}>
       {r.stars === 3 ? <Confetti count={60} /> : null}
-      <View style={s.results}>
-        <Text style={[s.resultTitle, { color: passed ? C.good : C.bad }]} testID="practice-done">
-          {r.stars === 3 ? 'Flawless!' : passed ? (level ? 'Level clear!' : 'Nice run!') : 'Almost! Try again'}
-        </Text>
-        <Stars n={r.stars} size={44} />
-        <Text style={s.bigScore} testID="practice-score">
-          {r.score}
-        </Text>
-        {done.newBest ? <Text style={s.newBest}>New best score!</Text> : null}
-        <Text style={s.xpGain}>+{done.xp} XP</Text>
-        <View style={s.stats}>
-          <Stat label="Accuracy" value={`${Math.round(r.accuracy * 100)}%`} testID="practice-accuracy" />
-          <Stat label="Best combo" value={String(r.bestCombo)} />
-          {r.eighthsBpm ? <Stat label="Speed" value={`${Math.round(r.notesPerMinute)}/min`} /> : null}
-        </View>
-        {done.grades ? (
+      <ScrollView style={{ width: '100%', maxWidth: 440 }} contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
+        <View style={s.results}>
+          <Text style={[s.resultTitle, { color: passed ? C.good : C.bad }]} testID="practice-done">
+            {r.stars === 3 ? 'Flawless!' : passed ? (level ? 'Lesson cleared!' : 'Nice run!') : 'Almost! Try again'}
+          </Text>
+          <Stars n={r.stars} size={44} />
+          <Text style={s.bigScore} testID="practice-score">
+            {r.score}
+          </Text>
+          {done.newBest ? <Text style={s.newBest}>New best score!</Text> : null}
+          <Text style={s.xpGain}>+{done.xp} XP</Text>
           <View style={s.stats}>
-            {(Object.keys(done.grades) as Grade[]).map((g) => (
-              <Stat key={g} label={GRADE[g].label.toLowerCase()} value={String(done.grades![g])} />
-            ))}
+            <Stat label="Accuracy" value={`${Math.round(r.accuracy * 100)}%`} testID="practice-accuracy" />
+            <Stat label="Best combo" value={String(r.bestCombo)} />
+            {r.eighthsBpm ? <Stat label="Speed" value={`${Math.round(r.notesPerMinute)}/min`} /> : null}
           </View>
-        ) : null}
-        {!passed ? <Text style={s.hint}>Get 70% accuracy to pass. Try Detect mode or a slower tempo.</Text> : null}
-        {done.unlocked ? <Text style={s.unlock}>🔓 Level {done.unlocked} unlocked!</Text> : null}
-        {done.newBadges.map((b) => (
-          <View key={b.id} style={s.badgeNew} testID="badge-new">
-            <Text style={{ fontSize: 26 }}>{b.icon}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={s.badgeTitle}>Badge: {b.title}</Text>
-              <Text style={s.hint}>{b.text}</Text>
+          {done.grades ? (
+            <View style={s.stats}>
+              {(Object.keys(done.grades) as Grade[]).map((g) => (
+                <Stat key={g} label={GRADE[g].label.toLowerCase()} value={String(done.grades![g])} />
+              ))}
             </View>
+          ) : null}
+          {!passed ? <Text style={s.hint}>Get 70% right to pass. Try Listen first, or Play mode where each note waits for you.</Text> : null}
+          {done.unlocked ? <Text style={s.unlock}>🔓 Lesson {done.unlocked} unlocked!</Text> : null}
+          {done.newBadges.map((b) => (
+            <View key={b.id} style={s.badgeNew} testID="badge-new">
+              <Text style={{ fontSize: 26 }}>{b.icon}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={s.badgeTitle}>Badge: {b.title}</Text>
+                <Text style={s.hint}>{b.text}</Text>
+              </View>
+            </View>
+          ))}
+          <View style={s.goal} testID="today-goal">
+            <Text style={s.kicker}>
+              TODAY · {mins} OF {goalMin} MIN
+            </Text>
+            <ProgressBar value={today / (goalMin * 60)} color={C.accent} />
+            {today >= goalMin * 60 ? <Text style={s.hint}>Daily goal reached. Keep going or call it a day.</Text> : null}
           </View>
-        ))}
-        <View style={s.resultButtons}>
-          {nextLevel && passed ? <Button title={`Next: ${nextLevel.title}`} onPress={onNext} testID="next-level" /> : null}
-          <Button title="Play again" kind={nextLevel && passed ? 'secondary' : 'primary'} onPress={onAgain} testID="practice-again" />
-          <Button title="Levels" kind="secondary" onPress={onLevels} />
+          <View style={s.resultButtons}>
+            {nextLevel && passed ? <CmdButton title={`Next: ${nextLevel.title}`} cmd="ENTER" onPress={onNext} testID="next-level" /> : null}
+            <CmdButton title="Play again" cmd={nextLevel && passed ? 'AGAIN' : 'ENTER'} kind={nextLevel && passed ? 'secondary' : 'primary'} onPress={onAgain} testID="practice-again" />
+            <CmdButton title="Back to the lesson" cmd="BACK" kind="ghost" onPress={onLesson} testID="results-lesson" />
+          </View>
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -647,7 +878,7 @@ function Stat({ label, value, testID }: { label: string; value: string; testID?:
   );
 }
 
-function LevelsPanel({ current, onPick }: { current: number | null; onPick: (l: Level) => void }) {
+export function LevelsPanel({ current, onPick }: { current: number | null; onPick: (l: Level) => void }) {
   const { progress } = useProgress();
   const p = progress.penta;
   return (
@@ -671,7 +902,7 @@ function LevelsPanel({ current, onPick }: { current: number | null; onPick: (l: 
                   <Text style={s.levelName}>{l.title}</Text>
                   <Text style={s.hint}>
                     {l.setup.key} {l.setup.scale.replace(' Pentatonic', '')} · box {l.setup.position} · {l.setup.pattern} ·{' '}
-                    {l.setup.mode === 'detect' ? 'detect' : `${l.setup.bpm} BPM${l.setup.perBeat === 2 ? ' eighths' : ''}`}
+                    {l.setup.mode === 'detect' ? 'play' : `on the beat, ${l.setup.bpm} BPM${l.setup.perBeat === 2 ? ' eighths' : ''}`}
                   </Text>
                 </View>
                 <Stars n={rec?.stars ?? 0} size={14} />
@@ -704,7 +935,7 @@ function SettingsPanel({ setup, onChange, inLevel }: { setup: RunSetup; onChange
   return (
     <View style={{ gap: 12 }}>
       {inLevel ? <Text style={s.hint}>Changing anything here switches from the level to free play. Pick the level again in Levels.</Text> : null}
-      <Chips label="MODE" options={['detect', 'metronome']} value={setup.mode} show={(m) => (m === 'detect' ? '🎯 Detect' : '🥁 Metronome')} onPick={(mode) => onChange({ mode: mode as PracticeMode })} />
+      <Chips label="MODE" options={['detect', 'metronome']} value={setup.mode} show={(m) => (m === 'detect' ? '🎸 Play' : '🥁 On the beat')} onPick={(mode) => onChange({ mode: mode as PracticeMode })} />
       <Chips label="KEY" options={[...ROOTS]} value={setup.key} onPick={(key) => onChange({ key })} />
       <Chips label="SCALE" options={['Minor Pentatonic', 'Major Pentatonic']} value={setup.scale} show={(v) => v.replace(' Pentatonic', '')} onPick={(v) => onChange({ scale: v as RunSetup['scale'] })} />
       <Chips label="BOX" options={['1', '2', '3', '4', '5']} value={String(setup.position)} onPick={(v) => onChange({ position: Number(v) })} />
@@ -762,10 +993,19 @@ const s = StyleSheet.create({
   message: { color: C.dim, textAlign: 'center', fontSize: 15, fontWeight: '700' },
   tools: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
   tool: { alignItems: 'center', backgroundColor: C.panel, borderRadius: 14, borderWidth: 1, borderColor: C.border, paddingVertical: 8, minWidth: 60 },
+  toolOn: { borderColor: C.accent, borderWidth: 2 },
   toolIcon: { fontSize: 20, color: C.text },
   toolLabel: { color: C.faint, fontSize: 11, fontWeight: '700' },
   bpm: { color: C.text, fontSize: 30, fontWeight: '900' },
   hint: { color: C.faint, fontSize: 13 },
+  modeHint: { color: C.dim, fontSize: 14, textAlign: 'center' },
+  coach: { backgroundColor: '#FFF6E0', borderColor: C.star, borderWidth: 1.5, borderRadius: 12, padding: 10, gap: 8 },
+  coachText: { color: '#3D3200', fontSize: 15, fontWeight: '600' },
+  pausedWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(245,245,240,0.85)', borderRadius: 18, padding: 12 },
+  pausedCard: { backgroundColor: C.panel, borderRadius: 18, padding: 16, gap: 10, width: '100%', maxWidth: 380, borderWidth: 1, borderColor: C.border },
+  pausedTitle: { color: C.text, fontSize: 24, fontWeight: '900' },
+  row2: { flexDirection: 'row', gap: 8 },
+  goal: { alignSelf: 'stretch', gap: 6, paddingTop: 4 },
   tipCard: { backgroundColor: C.panel, borderRadius: 12, padding: 12, borderLeftWidth: 4, borderLeftColor: C.star },
   tip: { color: C.dim, fontSize: 14 },
   resultsWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(22,24,29,0.45)', alignItems: 'center', justifyContent: 'center', padding: 16 },

@@ -42,3 +42,4 @@ yarn-error.*
 
 # e2e output
 e2e/out/
+.env
